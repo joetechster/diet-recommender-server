@@ -7,7 +7,7 @@ const port = 3000;
 
 // Load the CSV file
 let df = [];
-let csvPath = path.join(__dirname, 'data', 'Abbrev.csv')
+let csvPath = path.join(__dirname, 'data', 'ABBREV.csv')
 console.log('Current directory:', __dirname);
 console.log('Looking for CSV at:', csvPath);
 console.log('Files in directory:', fs.readdirSync(path.dirname(csvPath)));
