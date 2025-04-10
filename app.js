@@ -12,7 +12,7 @@ console.log('Current directory:', __dirname);
 console.log('Looking for CSV at:', csvPath);
 console.log('Files in directory:', fs.readdirSync(path.dirname(csvPath)));
 
-fs.createReadStream(path.join(csvPath)
+fs.createReadStream(path.join(csvPath))
   .pipe(csv())
   .on('data', (row) => {
     // Convert numeric fields from strings to numbers
