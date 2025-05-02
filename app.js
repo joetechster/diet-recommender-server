@@ -8,7 +8,9 @@ const port = 3000;
 
 // Load the CSV file
 let df = [];
+let nigerianFoodsDf = [];
 let csvPath = path.join(__dirname, "data", "ABBREV.csv");
+let nigerianFoodsCsvPath = path.join(__dirname, "data", "COLLATTEDAJIBABA.csv");
 console.log("Current directory:", __dirname);
 console.log("Looking for CSV at:", csvPath);
 console.log("Files in directory:", fs.readdirSync(path.dirname(csvPath)));
@@ -19,6 +21,20 @@ fs.createReadStream(path.join(csvPath))
     // Convert numeric fields from strings to numbers
     if (row.Energ_Kcal) row.Energ_Kcal = parseFloat(row.Energ_Kcal);
     df.push(row);
+  })
+  .on("end", () => {
+    console.log("CSV file successfully loaded");
+  })
+  .on("error", (err) => {
+    console.error("Error loading CSV file:", err);
+  });
+// Load nigerian foods dataset
+fs.createReadStream(path.join(nigerianFoodsCsvPath))
+  .pipe(csv())
+  .on("data", (row) => {
+    // Convert numeric fields from strings to numbers
+    if (row.Energ_Kcal) row.Energ_Kcal = parseFloat(row.Energ_Kcal);
+    nigerianFoodsDf.push(row);
   })
   .on("end", () => {
     console.log("CSV file successfully loaded");
@@ -118,6 +134,31 @@ function classifyCaloricIntake(caloric_intake) {
   }
 }
 
+const getRandomDiets = (caloricIntake) => {
+  // 1. Filter foods below the caloric limit
+  const filteredDiets = nigerianFoodsDf.filter(
+    (item) => item.Energ_Kcal < caloricIntake + 100
+  );
+
+  // 2. Shuffle the array to randomize order (Fisher-Yates algorithm)
+  const shuffledDiets = [...filteredDiets].sort(() => Math.random() - 0.5);
+  const uniqueDiets = [];
+  const seenDescriptions = new Set(); // Track descriptions to avoid duplicates
+
+  for (const diet of shuffledDiets) {
+    if (!seenDescriptions.has(diet.Shrt_Desc)) {
+      uniqueDiets.push({
+        description: diet.Shrt_Desc,
+        calories: diet.Energ_Kcal,
+      });
+      seenDescriptions.add(diet.Shrt_Desc);
+      if (uniqueDiets.length === 10) break; // Stop once we have 10
+    }
+  }
+
+  return uniqueDiets;
+}
+
 // API endpoint
 app.get("/api/top_10_diets", (req, res) => {
   // Extract required query parameters
@@ -181,23 +222,11 @@ app.get("/api/top_10_diets", (req, res) => {
     );
     const classification = classifyCaloricIntake(caloricIntake);
 
-    // Get top 10 diets with calories less than caloricIntake + 100
-    const filteredDiets = df.filter(
-      (item) => item.Energ_Kcal < caloricIntake + 100
-    );
-    const sortedDiets = filteredDiets.sort(
-      (a, b) => b.Energ_Kcal - a.Energ_Kcal
-    );
-    const top10Diets = sortedDiets.slice(0, 10).map((item) => ({
-      description: item.Shrt_Desc,
-      calories: item.Energ_Kcal,
-    }));
-
     // Prepare response
     const response = {
       recommended_calories: caloricIntake,
       caloric_classification: classification,
-      top_10_diets: top10Diets,
+      top_10_diets: getRandomDiets(caloricIntake),
     };
 
     res.json(response);
