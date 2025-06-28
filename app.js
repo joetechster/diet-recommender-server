@@ -125,7 +125,7 @@ app.get("/api/top_10_diets", (req, res) => {
     return res.json({
       recommended_daily_calories: Math.round(recommendedCalories),
       caloric_classification: caloricCategory,
-      meal_plans: mealPlans.filter(plan => plan.calorie_match_percentage >= 90) // Only show plans that meet at least 90% of target
+      top_10_diets: mealPlans.filter(plan => plan.calorie_match_percentage >= 90) // Only show plans that meet at least 90% of target
     });
   } catch (error) {
     console.error("Processing error:", error);
