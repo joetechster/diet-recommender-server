@@ -102,7 +102,7 @@ function getMealPlans(targetCalories) {
   return mealPlans;
 }
 
-app.get("/api/meal_plans", (req, res) => {
+app.get("/api/top_10_diets", (req, res) => {
   const { age, height, weight, preg_stage, active } = req.query;
 
   if (!age || !height || !weight || !preg_stage || !active) {
