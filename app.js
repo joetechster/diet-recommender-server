@@ -8,7 +8,7 @@ const app = express();
 const port = 3000;
 
 let nigerianFoodsDf = [];
-const nigerianFoodsCsvPath = path.join(__dirname, "data", "COLLATTEDAJIBABA.csv");
+const nigerianFoodsCsvPath = path.join(__dirname, "data", "COLLATTEDAJIBABANNNN.csv");
 
 // Load Nigerian foods dataset
 fs.createReadStream(nigerianFoodsCsvPath)
@@ -57,24 +57,52 @@ function getCalorieCategory(value) {
   return "high";
 }
 
-function getSortedDiets(targetCalories) {
+function getMealPlans(targetCalories) {
   const seen = new Set();
   const uniqueDiets = nigerianFoodsDf
     .filter(item => item.Energ_Kcal > 0 && !seen.has(item.Shrt_Desc) && seen.add(item.Shrt_Desc))
     .map(item => ({
       description: item.Shrt_Desc,
       calories: item.Energ_Kcal,
-      calorie_category: getCalorieCategory(item.Energ_Kcal),
-      delta: Math.abs(item.Energ_Kcal - targetCalories)
+      calorie_category: getCalorieCategory(item.Energ_Kcal)
+    }))
+    // Sort by calories to ensure deterministic results
+    .sort((a, b) => a.calories - b.calories || a.description.localeCompare(b.description));
+
+  // Calculate ideal meal calories (target divided by 3-5 meals)
+  const mealCalories = targetCalories / 4; // Using 4 as a middle ground between 3-5
+  
+  // Find foods closest to the ideal meal calories
+  const mealOptions = uniqueDiets
+    .map(item => ({
+      ...item,
+      delta: Math.abs(item.calories - mealCalories)
     }))
     .sort((a, b) => a.delta - b.delta)
-    .slice(0, 10)
-    .map(({ delta, ...rest }) => rest); // remove delta from final output
+    .slice(0, 10); // Get top 10 closest matches
 
-  return uniqueDiets;
+  // Calculate how many times each food should be eaten to reach target
+  const mealPlans = mealOptions.map(food => {
+    const servings3 = targetCalories / (food.calories * 3);
+    const servings5 = targetCalories / (food.calories * 5);
+    
+    // Find the closest to whole number between 3-5 servings
+    const optimalServings = Math.min(5, Math.max(3, Math.round(targetCalories / food.calories)));
+    const actualCalories = food.calories * optimalServings;
+    
+    return {
+      food: food.description,
+      calories_per_serving: food.calories,
+      recommended_servings: optimalServings,
+      total_calories: actualCalories,
+      calorie_match_percentage: Math.round((actualCalories / targetCalories) * 100)
+    };
+  });
+
+  return mealPlans;
 }
 
-app.get("/api/top_10_diets", (req, res) => {
+app.get("/api/meal_plans", (req, res) => {
   const { age, height, weight, preg_stage, active } = req.query;
 
   if (!age || !height || !weight || !preg_stage || !active) {
@@ -92,12 +120,12 @@ app.get("/api/top_10_diets", (req, res) => {
   try {
     const recommendedCalories = estimateCalories(ageNum, heightNum, weightNum, preg_stage, active);
     const caloricCategory = getCalorieCategory(recommendedCalories);
-    const topDiets = getSortedDiets(recommendedCalories);
+    const mealPlans = getMealPlans(recommendedCalories);
 
     return res.json({
-      recommended_calories: Math.round(recommendedCalories),
+      recommended_daily_calories: Math.round(recommendedCalories),
       caloric_classification: caloricCategory,
-      top_10_diets: topDiets
+      meal_plans: mealPlans.filter(plan => plan.calorie_match_percentage >= 90) // Only show plans that meet at least 90% of target
     });
   } catch (error) {
     console.error("Processing error:", error);
