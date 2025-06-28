@@ -91,8 +91,8 @@ function getMealPlans(targetCalories) {
     const actualCalories = food.calories * optimalServings;
     
     return {
-      food: food.description,
-      calories_per_serving: food.calories,
+      description: food.description,
+      calories: food.calories,
       recommended_servings: optimalServings,
       total_calories: actualCalories,
       calorie_match_percentage: Math.round((actualCalories / targetCalories) * 100)
