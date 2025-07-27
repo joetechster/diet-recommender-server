@@ -10,11 +10,13 @@ const port = 3000;
 let nigerianFoodsDf = [];
 const nigerianFoodsCsvPath = path.join(__dirname, "data", "COLLATTEDAJIBABANNNN.csv");
 
-// Load Nigerian foods dataset
+// Load Nigerian foods dataset and add cluster column
 fs.createReadStream(nigerianFoodsCsvPath)
   .pipe(csv())
   .on("data", (row) => {
     if (row.Energ_Kcal) row.Energ_Kcal = parseFloat(row.Energ_Kcal);
+    // Add cluster based on Python's classification
+    row.cluster = row.Energ_Kcal < 300 ? "low" : row.Energ_Kcal <= 350 ? "mid" : "high";
     nigerianFoodsDf.push(row);
   })
   .on("end", () => {
@@ -27,79 +29,50 @@ fs.createReadStream(nigerianFoodsCsvPath)
 app.use(cors());
 app.use(express.json());
 
-// Adjusted calorie estimator
+// Caloric intake calculation (aligned with Python's nutrients function)
 function estimateCalories(age, height, weight, preg_stage, active) {
-  const heightCM = height * 100;
-
-  let activityFactor = {
+  const activityFactor = {
     "Sedentary": 1.2,
-    "Light Active": 1.3,
-    "Moderately Active": 1.45,
-    "Very Active": 1.6,
+    "Light Active": 1.375,
+    "Moderately Active": 1.55,
+    "Very Active": 1.75,
   }[active] || 1.2;
 
-  let bmr = 10 * weight + 6.25 * heightCM - 5 * age - 161;
-  let dailyCalories = bmr * activityFactor;
-
-  // Add pregnancy-based goal
-  const trimesterCalories = {
-    "FirstTrimester": 85,
-    "SecondTrimester": 285,
-    "ThirdTrimester": 475,
-  }[preg_stage] || 0;
-
-  return dailyCalories + trimesterCalories;
+  // Mifflin-St Jeor BMR equation
+  const bmr = 10 * weight + 6.25 * height - 5 * age - 161;
+  return bmr * activityFactor;
 }
 
+// Caloric classification (aligned with Python's classify_caloric_intake)
 function getCalorieCategory(value) {
-  if (value < 150) return "low";
-  if (value <= 300) return "mid";
+  if (value < 300) return "low";
+  if (value <= 350) return "mid";
   return "high";
 }
 
-function getMealPlans(targetCalories) {
-  const seen = new Set();
-  const uniqueDiets = nigerianFoodsDf
-    .filter(item => item.Energ_Kcal > 0 && !seen.has(item.Shrt_Desc) && seen.add(item.Shrt_Desc))
-    .map(item => ({
-      description: item.Shrt_Desc,
-      calories: item.Energ_Kcal,
-      calorie_category: getCalorieCategory(item.Energ_Kcal)
-    }))
-    // Sort by calories to ensure deterministic results
-    .sort((a, b) => a.calories - b.calories || a.description.localeCompare(b.description));
+// Diet recommendation (aligned with Python's recommend_diets)
+function recommendDiets(caloricLevel, caloricValue, n = 10) {
+  const filteredData = nigerianFoodsDf.filter((item) => item.cluster === caloricLevel);
+  const sortedDiets = filteredData.sort((a, b) => b.Energ_Kcal - a.Energ_Kcal);
+  const recommendedDiets = sortedDiets.filter(
+    (item) => item.Energ_Kcal >= caloricValue && item.Energ_Kcal <= caloricValue + 10
+  );
+  return recommendedDiets.slice(0, n).map((item) => ({
+    Shrt_Desc: item.Shrt_Desc,
+    Energ_Kcal: item.Energ_Kcal,
+  }));
+}
 
-  // Calculate ideal meal calories (target divided by 3-5 meals)
-  const mealCalories = targetCalories / 4; // Using 4 as a middle ground between 3-5
-  
-  // Find foods closest to the ideal meal calories
-  const mealOptions = uniqueDiets
-    .map(item => ({
-      ...item,
-      delta: Math.abs(item.calories - mealCalories)
-    }))
-    .sort((a, b) => a.delta - b.delta)
-    .slice(0, 10); // Get top 10 closest matches
-
-  // Calculate how many times each food should be eaten to reach target
-  const mealPlans = mealOptions.map(food => {
-    const servings3 = targetCalories / (food.calories * 3);
-    const servings5 = targetCalories / (food.calories * 5);
-    
-    // Find the closest to whole number between 3-5 servings
-    const optimalServings = Math.min(5, Math.max(3, Math.round(targetCalories / food.calories)));
-    const actualCalories = food.calories * optimalServings;
-    
-    return {
-      description: food.description,
-      calories: food.calories,
-      recommended_servings: optimalServings,
-      total_calories: actualCalories,
-      calorie_match_percentage: Math.round((actualCalories / targetCalories) * 100)
-    };
-  });
-
-  return mealPlans;
+// Alternative recommendation (aligned with Python's final cell)
+function getTop10Diets(caloricIntake) {
+  const sortedDiets = nigerianFoodsDf
+    .filter((item) => item.Energ_Kcal < caloricIntake + 100)
+    .sort((a, b) => b.Energ_Kcal - a.Energ_Kcal)
+    .slice(0, 10);
+  return sortedDiets.map((item) => ({
+    Shrt_Desc: item.Shrt_Desc,
+    Energ_Kcal: item.Energ_Kcal,
+  }));
 }
 
 app.get("/api/top_10_diets", (req, res) => {
@@ -120,12 +93,14 @@ app.get("/api/top_10_diets", (req, res) => {
   try {
     const recommendedCalories = estimateCalories(ageNum, heightNum, weightNum, preg_stage, active);
     const caloricCategory = getCalorieCategory(recommendedCalories);
-    const mealPlans = getMealPlans(recommendedCalories);
+    const recommendedDiets = recommendDiets(caloricCategory, recommendedCalories, 5);
+    const top10Diets = getTop10Diets(recommendedCalories);
 
     return res.json({
-      recommended_daily_calories: Math.round(recommendedCalories),
+      recommended_daily_calories: Math.round(recommendedCalories * 100) / 100,
       caloric_classification: caloricCategory,
-      top_10_diets: mealPlans.filter(plan => plan.calorie_match_percentage >= 90) // Only show plans that meet at least 90% of target
+      recommended_diets: recommendedDiets,
+      top_10_diets: top10Diets,
     });
   } catch (error) {
     console.error("Processing error:", error);
